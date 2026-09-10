@@ -31,9 +31,7 @@ ROUTING RULES:
   provided datasets, use the corresponding database tool.
 
 - Heart disease dataset questions -> HeartDiseaseDBTool.
-
 - Cancer dataset questions -> CancerDBTool.
-
 - Diabetes dataset questions -> DiabetesDBTool.
 
 - If the user asks for general medical knowledge such as:
@@ -42,20 +40,17 @@ ROUTING RULES:
   MedicalWebSearchTool.
 
 - Never use a database tool to answer general medical knowledge.
-
 - Never use MedicalWebSearchTool to answer statistics from
   the provided datasets.
 
 - Always answer the user in clear, concise natural language.
-
 - Do not invent statistics that are not returned by a database tool.
-
 - Medical information is educational and should not be presented
   as a personal diagnosis.
 """
 
 
-# Wrap existing LangChain tools for OpenAI Agents SDK
+# OpenAI Agents SDK tools wrapping the existing LangChain tools
 
 @function_tool
 def HeartDiseaseDBTool(question: str) -> str:
@@ -65,6 +60,7 @@ def HeartDiseaseDBTool(question: str) -> str:
     Use this only for statistics, counts, averages,
     comparisons, and other data-related questions.
     """
+    print("\n Tool selected: HeartDiseaseDBTool")
     return heart_disease_db_tool.invoke(question)
 
 
@@ -76,6 +72,7 @@ def CancerDBTool(question: str) -> str:
     Use this only for statistics, counts, averages,
     comparisons, and other data-related questions.
     """
+    print("\n Tool selected: CancerDBTool")
     return cancer_db_tool.invoke(question)
 
 
@@ -87,6 +84,7 @@ def DiabetesDBTool(question: str) -> str:
     Use this only for statistics, counts, averages,
     comparisons, and other data-related questions.
     """
+    print("\n Tool selected: DiabetesDBTool")
     return diabetes_db_tool.invoke(question)
 
 
@@ -98,14 +96,16 @@ def MedicalWebSearchTool(question: str) -> str:
     Use this for definitions, symptoms, causes,
     prevention and treatment information.
     """
+    print("\n Tool selected: MedicalWebSearchTool")
     return medical_web_search_tool.invoke(question)
 
+
+# Build Main OpenAI Agents SDK Agent
 
 def build_agent():
     """
     Build the main OpenAI Agents SDK agent.
     """
-
     model = get_agents_model()
 
     agent = Agent(
@@ -122,6 +122,8 @@ def build_agent():
 
     return agent
 
+
+# Run Agent
 
 def run_agent(agent, user_input: str, chat_history=None):
     """
