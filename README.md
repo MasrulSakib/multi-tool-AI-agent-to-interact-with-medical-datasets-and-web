@@ -135,3 +135,7 @@ see which models your API key can currently use, then update
 Make sure you've run `python data/prepare_data.py` after placing all
 3 CSVs in `data/raw/` — the tools look for the `.db` files in `data/`
 and will fail if they don't exist yet.
+
+## License
+
+This project is licensed under the MIT License — see [LICENSE](LICENSE) for details.
