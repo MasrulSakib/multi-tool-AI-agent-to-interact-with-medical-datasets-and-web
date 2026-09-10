@@ -1,95 +1,164 @@
 import sqlite3
+
+from langchain_classic.agents import (
+    AgentExecutor,
+    create_tool_calling_agent,
+)
+
+from langchain_core.prompts import (
+    ChatPromptTemplate,
+    MessagesPlaceholder,
+)
+
+from langchain_core.tools import tool
+
 from llm_config import get_llm
 
 
-def ask_llm_for_sql(question: str, schema_description: str) -> str:
+def create_database_agent(
+    db_path: str,
+    schema_description: str,
+):
     """
-    Step 1: Turn a plain-English question into a SQL SELECT query.
+    Create a LangChain AgentExecutor for one SQLite database.
     """
-    prompt = f"""You are a SQL expert. Given a database schema and a question,
-write ONE SQLite query that answers the question.
 
-Schema:
+    @tool
+    def execute_sql(sql_query: str) -> str:
+        """
+        Execute a read-only SQLite SELECT query against the database.
+        """
+
+        sql = sql_query.strip()
+
+        # Remove accidental markdown fences.
+        sql = sql.replace("```sql", "").replace("```", "").strip()
+
+        # Safety: only SELECT statements.
+        if not sql.upper().startswith("SELECT"):
+            return (
+                "ERROR: Only SELECT queries are allowed. "
+                "The query was rejected."
+            )
+
+        # Prevent multiple SQL statements.
+        if ";" in sql.rstrip(";"):
+            return (
+                "ERROR: Multiple SQL statements are not allowed."
+            )
+
+        connection = sqlite3.connect(
+            f"file:{db_path}?mode=ro",
+            uri=True,
+        )
+
+        try:
+            cursor = connection.cursor()
+
+            cursor.execute(sql)
+
+            columns = [
+                description[0]
+                for description in cursor.description
+            ]
+
+            rows = cursor.fetchall()
+
+            if not rows:
+                return "Query executed successfully. No rows were returned."
+
+            # Keep the returned context reasonably small.
+            preview_rows = rows[:50]
+
+            return (
+                f"Columns: {columns}\n"
+                f"Rows: {preview_rows}\n"
+                f"Total rows returned: {len(rows)}"
+            )
+
+        except Exception as error:
+            return f"SQL execution error: {error}"
+
+        finally:
+            connection.close()
+
+    llm = get_llm()
+
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                f"""
+You are a database analysis agent.
+
+Your job is to answer questions using ONLY the SQLite
+database provided to you.
+
+DATABASE SCHEMA:
+
 {schema_description}
 
 Rules:
-- Only write a SELECT query. Never write INSERT, UPDATE, DELETE, or DROP.
-- Return ONLY the raw SQL query. No explanation, no markdown formatting,
-  no ```sql fences.
 
-Question: {question}
+1. Convert the user's question into a valid SQLite SELECT query.
+2. Use the execute_sql tool to execute the query.
+3. Never modify the database.
+4. Never use INSERT, UPDATE, DELETE, DROP, ALTER, or CREATE.
+5. Do not invent columns.
+6. Do not invent statistics.
+7. Base your final answer strictly on the SQL result.
+8. Return a concise natural-language answer.
+""",
+            ),
+            MessagesPlaceholder(
+                variable_name="chat_history",
+                optional=True,
+            ),
+            (
+                "human",
+                "{input}",
+            ),
+            MessagesPlaceholder(
+                variable_name="agent_scratchpad",
+            ),
+        ]
+    )
 
-SQL query:"""
+    tools = [execute_sql]
 
-    llm = get_llm()
-    response = llm.invoke(prompt)
-    sql_query = response.content.strip()
+    agent = create_tool_calling_agent(
+        llm,
+        tools,
+        prompt,
+    )
 
-    # In case the model wraps the query in markdown code fences anyway,
-    # strip those off so sqlite3 doesn't choke on them.
-    sql_query = sql_query.replace("```sql", "").replace("```", "").strip()
+    return AgentExecutor(
+        agent=agent,
+        tools=tools,
+        verbose=True,
+        max_iterations=5,
+    )
 
-    return sql_query
 
-
-def run_sql_query(db_path: str, sql_query: str):
+def answer_question_from_db(
+    question: str,
+    db_path: str,
+    schema_description: str,
+) -> str:
     """
-    Step 2: Run the SQL query against the database and return the rows.
-
-    Only SELECT queries are allowed here -- this is read-only data, and an
-    LLM-generated query should never be allowed to modify the database.
+    Run a question through the LangChain database agent.
     """
-    if not sql_query.strip().upper().startswith("SELECT"):
-        raise ValueError(f"Only SELECT queries are allowed. Got: {sql_query}")
 
-    connection = sqlite3.connect(db_path)
-    cursor = connection.cursor()
-    cursor.execute(sql_query)
-    columns = [description[0] for description in cursor.description]
-    rows = cursor.fetchall()
-    connection.close()
+    agent_executor = create_database_agent(
+        db_path=db_path,
+        schema_description=schema_description,
+    )
 
-    return columns, rows
+    result = agent_executor.invoke(
+        {
+            "input": question,
+            "chat_history": [],
+        }
+    )
 
-
-def ask_llm_to_explain_result(question: str, sql_query: str, columns, rows) -> str:
-    """
-    Step 3: Turn the raw SQL result into a natural-language answer.
-    """
-    # Keep the result small in case the query returns a lot of rows --
-    # we only need enough for the LLM to summarize it accurately.
-    preview_rows = rows[:20]
-
-    prompt = f"""A user asked a question about a medical dataset. Here is the
-question, the SQL query that was run, and the result. Write a short, clear,
-natural-language answer to the question based on the result.
-
-Question: {question}
-SQL query: {sql_query}
-Columns: {columns}
-Result rows (up to 20 shown): {preview_rows}
-Total rows returned: {len(rows)}
-
-Answer:"""
-
-    llm = get_llm()
-    response = llm.invoke(prompt)
-    return response.content.strip()
-
-
-def answer_question_from_db(question: str, db_path: str, schema_description: str) -> str:
-    """
-    Runs the full 3-step pipeline and returns a natural-language answer.
-    Also used to build the answer returned by each tool's @tool function.
-    """
-    sql_query = ask_llm_for_sql(question, schema_description)
-
-    try:
-        columns, rows = run_sql_query(db_path, sql_query)
-    except Exception as error:
-        return (
-            f"I tried to run this SQL query but it failed: {sql_query}\n"
-            f"Error: {error}"
-        )
-
-    return ask_llm_to_explain_result(question, sql_query, columns, rows)
+    return result["output"]

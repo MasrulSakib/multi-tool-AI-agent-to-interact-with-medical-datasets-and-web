@@ -1,9 +1,11 @@
 # Core agent framework
-# NOTE: In LangChain 1.x, AgentExecutor and create_tool_calling_agent moved out of
-# the main `langchain` package into the separate `langchain-classic` package.
 langchain-classic==1.0.8
 langchain-core==1.6.2
 langchain-groq==1.1.3
+
+# Agent tools
+openai-agents
+openai
 
 # Web search tool (MedicalWebSearchTool uses Tavily's API)
 tavily-python==0.5.0

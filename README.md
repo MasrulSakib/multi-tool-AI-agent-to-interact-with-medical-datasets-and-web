@@ -4,9 +4,14 @@ A single AI agent that answers questions about three medical datasets
 (Heart Disease, Cancer, Diabetes) and, separately, general medical
 knowledge questions — by routing each question to the right tool.
 
+The main agent uses the **OpenAI Agents SDK** for agent orchestration and
+tool routing, while the three database tools use **LangChain AgentExecutor**
+for text-to-SQL, SQL execution, and result interpretation. **Groq** is used
+as the LLM provider through its OpenAI-compatible API.
+
 ## How it works
 
-You ask a question. The agent picks one of 4 tools:
+You ask a question. The main agent picks one of 4 tools:
 
 | Question type                                          | Tool used              |
 | ------------------------------------------------------ | ---------------------- |
@@ -15,11 +20,17 @@ You ask a question. The agent picks one of 4 tools:
 | "How many diabetic patients have high blood pressure?" | `DiabetesDBTool`       |
 | "What are the symptoms of diabetes?"                   | `MedicalWebSearchTool` |
 
+The main agent is built with the **OpenAI Agents SDK** and is responsible
+for routing the question to the appropriate tool.
+
 The three DB tools each work the same way:
 
 1. Your question is turned into a SQL query by the LLM
 2. That SQL query runs against the real SQLite database
 3. The result is turned back into a plain-English answer by the LLM
+
+The DB-specific reasoning and SQL workflow are handled by **LangChain
+AgentExecutor**.
 
 The web search tool uses Tavily to search the web for general medical
 knowledge and does not touch the datasets at all.
@@ -40,8 +51,9 @@ medical-multi-tool-agent/
 │   ├── cancer_tool.py          <- CancerDBTool
 │   ├── diabetes_tool.py        <- DiabetesDBTool
 │   └── web_search_tool.py      <- MedicalWebSearchTool
-├── llm_config.py                <- one place that sets up the Groq LLM
-├── agent.py                     <- builds the Main Agent (AgentExecutor + 4 tools)
+├── llm_config.py                <- one place that sets up the Groq LLM for LangChain
+├── agents_model.py              <- configures Groq for the OpenAI Agents SDK
+├── agent.py                     <- builds the Main Agent (OpenAI Agents SDK + 4 tools)
 ├── main.py                      <- command-line chat loop
 ├── list_models.py               <- helper if a Groq model gets retired
 ├── requirements.txt
@@ -61,6 +73,10 @@ pip install -r requirements.txt
 - **Groq** (free): https://console.groq.com — create an API key
 - **Tavily** (free): https://tavily.com — create an API key
 
+This project uses the OpenAI Agents SDK as the agent framework, but it does
+**not** require an OpenAI model or `OPENAI_API_KEY`. Groq is used as the
+actual LLM provider through its OpenAI-compatible API.
+
 Copy `.env.example` to `.env` and fill in both keys:
 
 ```bash
@@ -75,7 +91,7 @@ these exact names:
 | Save as                      | Download from                                                            |
 | ---------------------------- | ------------------------------------------------------------------------ |
 | `data/raw/heart_disease.csv` | https://www.kaggle.com/datasets/johnsmith88/heart-disease-dataset        |
-| `data/raw/cancer.csv`        | https://www.kaggle.com/datasets/rabieelkharoua/cancer-prediction-dataset |
+| `data/raw/cancer.csv`       | https://www.kaggle.com/datasets/rabieelkharoua/cancer-prediction-dataset |
 | `data/raw/diabetes.csv`      | https://www.kaggle.com/datasets/iammustafatz/diabetes-prediction-dataset |
 
 ### 4. Build the databases
@@ -101,20 +117,18 @@ Try asking:
 
 Type `exit` to quit.
 
-## Key concepts (for anyone new to LangChain agents)
+## Key concepts (for anyone new to agents and LangChain)
 
-- **Tool**: a Python function the LLM can choose to call, decorated with
-  `@tool`. The docstring is what the LLM reads to decide _when_ to use it
-  — that's why each tool's docstring explicitly says what it's for and
-  what it's _not_ for.
-- **Agent**: the LLM plus a prompt that tells it which tools exist. It
-  decides which tool(s) to call and in what order.
-- **AgentExecutor**: the loop that actually runs the agent — it calls
-  the LLM, runs whatever tool the LLM picked, feeds the tool's result
-  back to the LLM, and repeats until the LLM gives a final answer instead
-  of another tool call.
-- **create_tool_calling_agent**: a LangChain helper that wires an LLM +
-  tools + prompt together into an agent, using the LLM provider's native
+- **OpenAI Agents SDK Agent**: the main agent that receives the user's
+  question, decides which tool should handle it, and returns the final answer.
+- **Tool**: a Python function the agent can choose to call. Each tool's
+  description tells the agent what it is for and what it should not be used
+  for.
+- **LangChain AgentExecutor**: the database-specific agent loop that calls
+  the LLM, generates SQL, runs the SQL tool, feeds the result back to the LLM,
+  and continues until it can provide a final answer.
+- **create_tool_calling_agent**: a LangChain helper that wires the LLM,
+  database tools, and prompt together using the LLM provider's native
   tool-calling / function-calling feature under the hood.
 
 ## Troubleshooting
