@@ -15,3 +15,6 @@ pandas==2.2.3
 
 # Load API keys from a .env file
 python-dotenv==1.0.1
+
+# HTTP requests
+requests==2.34.0
